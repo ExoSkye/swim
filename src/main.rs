@@ -1,21 +1,17 @@
-#![feature(assoc_char_funcs)]
 extern crate sdl2;
 extern crate derive_more;
 use std::collections::HashMap;
-use std::borrow::{Borrow, BorrowMut};
 use derive_more::{Add, Sub, Div, Mul, AddAssign, SubAssign, MulAssign, DivAssign};
 use std::io::Read;
 use std::fs::File;
-use std::io::prelude::*;
 use std::path::Path;
 use std::env;
-use std::time;
 use sdl2::image::LoadTexture;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use std::time::Duration;
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 use std::convert::TryInto;
+use std::time::Duration;
 
 
 #[derive(Copy, Clone, PartialEq, Add, Sub, Div, Mul, AddAssign, SubAssign, MulAssign, DivAssign)]
@@ -47,7 +43,7 @@ impl Coord {
         }
     }
 
-    pub fn getChar(&self) -> IntCoord {
+    pub fn get_char(&self) -> IntCoord {
         IntCoord {
             x: self.x as i32,
             y: self.y as i32
@@ -69,7 +65,7 @@ struct Program {
 impl Program {
     pub fn new(file: String) -> Program {
         let path = Path::new(file.as_str());
-        let display = path.display();
+        path.display();
 
         let mut program: Program = Program{
             code: HashMap::new()
@@ -86,23 +82,23 @@ impl Program {
             },
         };
 
-        let mut lines: Vec<&str> = str.split("\n").collect();
+        let lines: Vec<&str> = str.split("\n").collect();
 
-        let mut curCoord: IntCoord = IntCoord::new(0);
-        curCoord.y = 8;
+        let mut cur_coord: IntCoord = IntCoord::new(0);
+        cur_coord.y = 8;
 
         for line in lines {
-            curCoord.x = 0;
+            cur_coord.x = 0;
             for char in line.chars() {
                 match char {
                     ' ' => {},
                     _ => {
-                        program.code.insert(curCoord,char);
+                        program.code.insert(cur_coord, char);
                     }
                 }
-                curCoord.x += 1;
+                cur_coord.x += 1;
             }
-            curCoord.y -= 1;
+            cur_coord.y -= 1;
         }
 
         program
@@ -147,17 +143,20 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) -> bool {
+    pub fn update(&mut self,dt: f32) -> bool {
         self.accel -= self.gravity;
         self.pos.x += self.speed.x+(self.accel.x / 2.0);
         self.speed.x += self.accel.x;
         self.pos.y += self.speed.y+(self.accel.y / 2.0);
         self.speed.y += self.accel.y;
-        self.speed.x *= 0.9_f32.powf(60.0);
-        self.speed.y *= 0.9_f32.powf(60.0);
+        self.speed.x *= dt.powf(0.1_f32);
+        self.speed.y *= dt.powf(0.1_f32);
         self.accel += self.gravity;
-        self.accel.x *= 0.7_f32.powf(60.0);
-        self.accel.y *= 0.7_f32.powf(60.0);
+        self.accel.x *= dt.powf(0.2_f32);
+        self.accel.y *= dt.powf(0.2_f32);
+        if self.pos.x < 0.0 {
+            self.pos.x = 0.0;
+        }
         if self.pos.y < -8.0f32 || self.pos.y > 8.0f32 {
             true
         }
@@ -169,9 +168,9 @@ impl State {
 
 fn gen_opcodes() -> std::collections::HashMap<char, fn(&mut State) -> ()> {
     let mut opcodes: HashMap<char, fn(&mut State) -> ()> = HashMap::new();
-    opcodes.insert('^',|mut state| {state.accel.y += 10.0});
-    opcodes.insert('>',|mut state| {state.accel.x += 10.0});
-    opcodes.insert('<',|mut state| {state.accel.x -= 10.0});
+    opcodes.insert('^',|mut state| {state.accel.y += 1.0});
+    opcodes.insert('>',|mut state| {state.accel.x += 1.0});
+    opcodes.insert('<',|mut state| {state.accel.x -= 1.0});
     opcodes.insert('+',|mut state| {state.cell_ptr += 1});
     opcodes.insert('-',|mut state| {state.cell_ptr -= 1});
     opcodes.insert('a',|mut state| {state.accumulator += state.cells[state.cell_ptr]});
@@ -183,8 +182,12 @@ fn gen_opcodes() -> std::collections::HashMap<char, fn(&mut State) -> ()> {
         let mut coord: Coord = state.pos;
         coord.x += 1.0;
         let mut digits = String::new();
-        while state.program.code.get(&coord.getChar()) != None {
-            digits += state.program.code.get(&coord.getChar()).unwrap().to_string().as_str();
+        while state.program.code.get(&coord.get_char()) != None {
+            digits += match state.program.code.get(&coord.get_char()) {
+                None => {break;},
+                Some(inp) => {inp}
+            }.to_string().as_str();
+            coord.x += 1.0;
         }
         if digits.len() == 0 {
             state.accumulator = 0.0;
@@ -193,7 +196,7 @@ fn gen_opcodes() -> std::collections::HashMap<char, fn(&mut State) -> ()> {
             let mut out: u32 = 0;
             let mut i: i32 = digits.len() as i32;
             while i != 0 {
-                out += (digits.chars().nth(digits.len()-i as usize)).unwrap().to_digit(10).unwrap()*1_u32.pow(i.try_into().unwrap());
+                out += (digits.chars().nth(digits.len()-i as usize)).unwrap().to_digit(10).unwrap()*10_u32.pow((i-1).try_into().unwrap());
                 i-=1;
             }
             state.accumulator = out as f32;
@@ -213,18 +216,18 @@ fn gen_opcodes() -> std::collections::HashMap<char, fn(&mut State) -> ()> {
     });
     opcodes.insert('e',|mut state| {
         if state.accumulator == state.cells[state.cell_ptr] {
-            state.accel.x += 10.0f32;
+            state.accel.x += 1.0f32;
         }
         else {
-            state.accel.y -= 10.0f32;
+            state.accel.y -= 1.0f32;
         }
     });
     opcodes.insert('b',|mut state| {
         if state.accumulator > state.cells[state.cell_ptr] {
-            state.accel.x += 10.0f32;
+            state.accel.x += 1.0f32;
         }
         else {
-            state.accel.x -= 10.0f32;
+            state.accel.x -= 1.0f32;
         }
     });
     opcodes.insert('m',|mut state| {
@@ -249,24 +252,34 @@ fn main() {
 
         // Setup SDL
 
-        let mut sdl = sdl2::init().unwrap();
-        let mut video_sys = sdl.video().expect("Failed to setup video subsystem");
-        let mut window = video_sys.window("Swim",1280,720).position_centered().opengl().build().expect("Failed to create window");
+        let sdl = sdl2::init().unwrap();
+        let video_sys = sdl.video().expect("Failed to setup video subsystem");
+        let window = video_sys.window("Swim",1280,720).position_centered().opengl().build().expect("Failed to create window");
         let mut canvas = window.into_canvas().build().expect("Failed to create window canvas");
 
         let texture_creator = canvas.texture_creator();
 
-        let mut turtle = texture_creator.load_texture("turtle.png").expect("Couldn't open turtle texture");
+        let turtle = texture_creator.load_texture("turtle.png").expect("Couldn't open turtle texture");
+
+        let ttf = sdl2::ttf::init().unwrap();
+
+        let font = ttf.load_font("Roboto-Regular.ttf",24).unwrap();
 
         let mut event_pump = sdl.event_pump().unwrap();
 
+        let mut x_offset = 0;
+
         'running: loop {
-            if state.program.code.get(&state.pos.getChar()) != None {
-                let command: char = *state.program.code.get(&state.pos.getChar()).unwrap();
-                opcodes[&command](&mut state);
-                println!("{}",command);
+            let start = std::time::Instant::now();
+            if state.program.code.get(&state.pos.get_char()) != None {
+                let command: char = *state.program.code.get(&state.pos.get_char()).unwrap();
+                if command.is_digit(10) {
+                    state.accumulator = command.to_digit(10).unwrap() as f32;
+                }
+                else {
+                    opcodes[&command](&mut state);
+                }
             }
-            state.update();
             canvas.clear();
             for event in event_pump.poll_iter() {
                 match event {
@@ -277,9 +290,26 @@ fn main() {
                     _ => {}
                 }
             }
-            canvas.copy(&turtle,None,sdl2::rect::Rect::new(state.pos.x as i32, 720-((state.pos.y+8.0)*45.0) as i32, 32, 32));
+
+            for x in 0+x_offset..72+x_offset {
+                for y in -8..8 {
+                    if state.program.code.get(&IntCoord{x,y}) != None {
+                        let character = state.program.code.get(&IntCoord{x,y}).unwrap();
+                        let char_surf = font.render_char(*character).solid(sdl2::pixels::Color::RGB(255,255,255)).unwrap();
+                        let width = char_surf.width();
+                        let height = char_surf.height();
+                        let char_tex = texture_creator.create_texture_from_surface(char_surf).unwrap();
+                        canvas.copy(&char_tex, None, sdl2::rect::Rect::new(x*(1280/72), (9-y)*(720/17),width,height));
+                    }
+                }
+            }
+            canvas.copy(&turtle,None,sdl2::rect::Rect::new(((state.pos.x*32.0) % 1280.0)  as i32, 720-((state.pos.y+8.0)*45.0) as i32, 32, 32)).unwrap();
             canvas.present();
-            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+            match state.update(start.elapsed().as_secs_f32()) {
+                true => {break;},
+                false => {}
+            }
+            ::std::thread::sleep(Duration::new(0,1_000_000_000/60))
         };
     }
     else {
